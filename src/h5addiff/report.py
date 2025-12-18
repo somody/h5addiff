@@ -79,6 +79,12 @@ class DiffReport:
             lines.append(f"Equal: {self._status_icon(self.diff.x_diff.values_equal)}")
             if self.diff.x_diff.summary:
                 lines.append(f"Details: {self.diff.x_diff.summary}")
+            # Show sum comparison (total read counts)
+            details = self.diff.x_diff.details
+            if "sum_first" in details:
+                lines.append(f"Sum (file 1): {details['sum_first']:,.2f}")
+                lines.append(f"Sum (file 2): {details['sum_second']:,.2f}")
+                lines.append(f"Sum difference: {details['sum_difference']:+,.2f} ({details['sum_percent_change']:+.2f}%)")
 
         # Helper to format component diffs
         def format_section(title: str, diffs: dict[str, ComponentDiff] | ComponentDiff | None):
@@ -165,6 +171,23 @@ class DiffReport:
 
         self.console.print()
         self.console.print(dim_table)
+
+        # X matrix sum comparison table (if available)
+        if self.diff.x_diff and "sum_first" in self.diff.x_diff.details:
+            details = self.diff.x_diff.details
+            sum_table = Table(title="X Matrix (Total Counts)", show_header=True)
+            sum_table.add_column("Property")
+            sum_table.add_column("Value", justify="right")
+
+            sum_table.add_row("Sum (file 1)", f"{details['sum_first']:,.2f}")
+            sum_table.add_row("Sum (file 2)", f"{details['sum_second']:,.2f}")
+            sum_table.add_row(
+                "Difference",
+                f"{details['sum_difference']:+,.2f} ({details['sum_percent_change']:+.2f}%)",
+            )
+
+            self.console.print()
+            self.console.print(sum_table)
 
         # Components table
         components_table = Table(title="Components", show_header=True)

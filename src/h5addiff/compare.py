@@ -78,8 +78,21 @@ def _compare_arrays(
     arr1: Any,
     arr2: Any,
     name: str,
+    include_sum: bool = False,
 ) -> ComponentDiff:
-    """Compare two numpy arrays or sparse matrices."""
+    """Compare two numpy arrays or sparse matrices.
+    
+    Parameters
+    ----------
+    arr1 : array-like
+        First array to compare.
+    arr2 : array-like
+        Second array to compare.
+    name : str
+        Name of the component being compared.
+    include_sum : bool, optional
+        Whether to include sum comparison (useful for X matrix read counts).
+    """
     diff = ComponentDiff(
         name=name,
         shape_first=arr1.shape,
@@ -98,6 +111,17 @@ def _compare_arrays(
         dense1 = arr1.toarray() if sparse.issparse(arr1) else np.asarray(arr1)
         dense2 = arr2.toarray() if sparse.issparse(arr2) else np.asarray(arr2)
 
+        # Calculate sums if requested (useful for total read counts)
+        if include_sum:
+            sum1 = float(np.nansum(dense1))
+            sum2 = float(np.nansum(dense2))
+            diff.details["sum_first"] = sum1
+            diff.details["sum_second"] = sum2
+            diff.details["sum_difference"] = sum2 - sum1
+            diff.details["sum_percent_change"] = (
+                float((sum2 - sum1) / sum1 * 100) if sum1 != 0 else float("inf") if sum2 != 0 else 0.0
+            )
+
         # Handle NaN values
         if np.issubdtype(dense1.dtype, np.floating):
             equal = np.allclose(dense1, dense2, equal_nan=True)
@@ -110,6 +134,12 @@ def _compare_arrays(
             diff.summary = f"{n_diff} values differ"
             diff.details["n_different"] = n_diff
             diff.details["percent_different"] = float(n_diff / dense1.size * 100)
+            
+            # Add sum info to summary if available
+            if include_sum:
+                sum_diff = diff.details["sum_difference"]
+                pct = diff.details["sum_percent_change"]
+                diff.summary += f"; sum diff: {sum_diff:+.2f} ({pct:+.2f}%)"
     except Exception as e:
         diff.values_equal = False
         diff.summary = f"Comparison failed: {e}"
@@ -302,9 +332,9 @@ def compare_h5ad(
     result.obs_names_equal = adata1.obs_names.equals(adata2.obs_names)
     result.var_names_equal = adata1.var_names.equals(adata2.var_names)
 
-    # Compare X matrix
+    # Compare X matrix (include sum for total read count comparison)
     if adata1.X is not None and adata2.X is not None:
-        result.x_diff = _compare_arrays(adata1.X, adata2.X, "X")
+        result.x_diff = _compare_arrays(adata1.X, adata2.X, "X", include_sum=True)
     elif adata1.X is not None or adata2.X is not None:
         result.x_diff = ComponentDiff(
             name="X",
