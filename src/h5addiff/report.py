@@ -130,7 +130,7 @@ class DiffReport:
             )
 
         self.console.print()
-        self.console.print(Panel(f"[bold]H5AD File Comparison[/bold]"))
+        self.console.print(Panel("[bold]H5AD File Comparison[/bold]"))
         self.console.print(f"[dim]File 1:[/dim] {self.diff.file1}")
         self.console.print(f"[dim]File 2:[/dim] {self.diff.file2}")
         self.console.print()

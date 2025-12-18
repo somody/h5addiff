@@ -78,6 +78,7 @@ def test_different_x_matrix(temp_dir, simple_adata):
     diff = compare_h5ad(file1, file2)
 
     assert not diff.is_identical
+    assert diff.x_diff is not None
     assert not diff.x_diff.values_equal
 
 
@@ -113,6 +114,7 @@ def test_different_obs_columns(temp_dir, simple_adata):
     diff = compare_h5ad(file1, file2)
 
     assert not diff.is_identical
+    assert diff.obs_diff is not None
     assert not diff.obs_diff.values_equal
     assert "new_column" in diff.obs_diff.details.get("columns_only_in_second", [])
 

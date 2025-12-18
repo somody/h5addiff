@@ -7,6 +7,7 @@ from typing import Any
 import anndata as ad
 import numpy as np
 import pandas as pd
+from scipy import sparse
 
 
 @dataclass
@@ -73,8 +74,12 @@ class H5adDiff:
         return True
 
 
-def _compare_arrays(arr1: np.ndarray, arr2: np.ndarray, name: str) -> ComponentDiff:
-    """Compare two numpy arrays."""
+def _compare_arrays(
+    arr1: Any,
+    arr2: Any,
+    name: str,
+) -> ComponentDiff:
+    """Compare two numpy arrays or sparse matrices."""
     diff = ComponentDiff(
         name=name,
         shape_first=arr1.shape,
@@ -89,24 +94,22 @@ def _compare_arrays(arr1: np.ndarray, arr2: np.ndarray, name: str) -> ComponentD
         return diff
 
     try:
-        # Handle sparse matrices
-        if hasattr(arr1, "toarray"):
-            arr1 = arr1.toarray()
-        if hasattr(arr2, "toarray"):
-            arr2 = arr2.toarray()
+        # Handle sparse matrices - convert to dense for comparison
+        dense1 = arr1.toarray() if sparse.issparse(arr1) else np.asarray(arr1)
+        dense2 = arr2.toarray() if sparse.issparse(arr2) else np.asarray(arr2)
 
         # Handle NaN values
-        if np.issubdtype(arr1.dtype, np.floating):
-            equal = np.allclose(arr1, arr2, equal_nan=True)
+        if np.issubdtype(dense1.dtype, np.floating):
+            equal = np.allclose(dense1, dense2, equal_nan=True)
         else:
-            equal = np.array_equal(arr1, arr2)
+            equal = np.array_equal(dense1, dense2)
 
         diff.values_equal = equal
         if not equal:
-            n_diff = np.sum(arr1 != arr2)
+            n_diff = int(np.sum(dense1 != dense2))
             diff.summary = f"{n_diff} values differ"
-            diff.details["n_different"] = int(n_diff)
-            diff.details["percent_different"] = float(n_diff / arr1.size * 100)
+            diff.details["n_different"] = n_diff
+            diff.details["percent_different"] = float(n_diff / dense1.size * 100)
     except Exception as e:
         diff.values_equal = False
         diff.summary = f"Comparison failed: {e}"
@@ -114,7 +117,11 @@ def _compare_arrays(arr1: np.ndarray, arr2: np.ndarray, name: str) -> ComponentD
     return diff
 
 
-def _compare_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, name: str) -> ComponentDiff:
+def _compare_dataframes(
+    df1: Any,
+    df2: Any,
+    name: str,
+) -> ComponentDiff:
     """Compare two pandas DataFrames."""
     diff = ComponentDiff(
         name=name,
