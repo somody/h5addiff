@@ -58,6 +58,12 @@ class DiffReport:
         # Overall status
         if self.diff.is_identical:
             lines.append("Status: ✓ Files are IDENTICAL")
+        elif self.diff.is_equivalent:
+            lines.append("Status: ≈ Files are EQUIVALENT (same data, different order)")
+            if self.diff.obs_reordered:
+                lines.append("  - Observations are reordered")
+            if self.diff.var_reordered:
+                lines.append("  - Variables are reordered")
         else:
             lines.append("Status: ✗ Files are DIFFERENT")
 
@@ -69,6 +75,10 @@ class DiffReport:
         lines.append(f"Variables (n_vars) difference: {self.diff.n_vars_diff}")
         lines.append(f"Observation names equal: {self.diff.obs_names_equal}")
         lines.append(f"Variable names equal: {self.diff.var_names_equal}")
+        if self.diff.obs_reordered:
+            lines.append("Observation names same set: ✓ (reordered)")
+        if self.diff.var_reordered:
+            lines.append("Variable names same set: ✓ (reordered)")
 
         # X matrix
         if self.diff.x_diff:
@@ -127,6 +137,18 @@ class DiffReport:
                 Text("✓ Files are IDENTICAL", style="bold green"),
                 title="Status",
                 border_style="green",
+            )
+        elif self.diff.is_equivalent:
+            reorder_parts = []
+            if self.diff.obs_reordered:
+                reorder_parts.append("observations")
+            if self.diff.var_reordered:
+                reorder_parts.append("variables")
+            reorder_info = ", ".join(reorder_parts)
+            status_panel = Panel(
+                Text(f"≈ Files are EQUIVALENT\n(reordered: {reorder_info})", style="bold yellow"),
+                title="Status",
+                border_style="yellow",
             )
         else:
             status_panel = Panel(

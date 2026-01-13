@@ -45,6 +45,12 @@ class H5adDiff:
     uns_diff: dict[str, ComponentDiff] = field(default_factory=dict)
     obs_names_equal: bool = True
     var_names_equal: bool = True
+    # Reordering detection
+    obs_names_same_set: bool = True  # Same observations, possibly different order
+    var_names_same_set: bool = True  # Same variables, possibly different order
+    obs_reordered: bool = False  # True if obs are same set but different order
+    var_reordered: bool = False  # True if var are same set but different order
+    x_equal_when_reordered: bool | None = None  # True if X matches after reordering
 
     @property
     def is_identical(self) -> bool:
@@ -72,6 +78,37 @@ class H5adDiff:
             if not diff.values_equal:
                 return False
         return True
+
+    @property
+    def is_equivalent(self) -> bool:
+        """Check if files are equivalent (same data, possibly reordered).
+        
+        Files are equivalent if they contain the same observations and variables
+        (possibly in different order) and the X matrix matches when reordered.
+        """
+        if self.is_identical:
+            return True
+        # Must have same set of obs and var names
+        if not self.obs_names_same_set or not self.var_names_same_set:
+            return False
+        # X must match when reordered
+        if self.x_equal_when_reordered is not True:
+            return False
+        return True
+
+    @property
+    def reorder_status(self) -> str:
+        """Get a human-readable reordering status."""
+        if self.is_identical:
+            return "identical"
+        if self.is_equivalent:
+            parts = []
+            if self.obs_reordered:
+                parts.append("observations")
+            if self.var_reordered:
+                parts.append("variables")
+            return f"equivalent (reordered: {', '.join(parts)})"
+        return "different"
 
 
 def _compare_arrays(
@@ -145,6 +182,55 @@ def _compare_arrays(
         diff.summary = f"Comparison failed: {e}"
 
     return diff
+
+
+def _check_x_equal_when_reordered(
+    adata1: ad.AnnData,
+    adata2: ad.AnnData,
+    common_obs: set,
+    common_var: set,
+) -> bool:
+    """Check if X matrices are equal when rows/columns are reordered to match.
+    
+    Parameters
+    ----------
+    adata1 : AnnData
+        First AnnData object.
+    adata2 : AnnData
+        Second AnnData object.
+    common_obs : set
+        Set of observation names common to both.
+    common_var : set
+        Set of variable names common to both.
+    
+    Returns
+    -------
+    bool
+        True if X matrices are equal after reordering.
+    """
+    try:
+        # Get the order of obs/var names in adata1
+        obs_order = list(adata1.obs_names)
+        var_order = list(adata1.var_names)
+        
+        # Reorder adata2 to match adata1's order
+        adata2_reordered = adata2[obs_order, var_order]
+        
+        # Compare the X matrices
+        arr1: Any = adata1.X
+        arr2: Any = adata2_reordered.X
+        
+        # Handle sparse matrices
+        dense1 = arr1.toarray() if sparse.issparse(arr1) else np.asarray(arr1)
+        dense2 = arr2.toarray() if sparse.issparse(arr2) else np.asarray(arr2)
+        
+        # Compare
+        if np.issubdtype(dense1.dtype, np.floating):
+            return bool(np.allclose(dense1, dense2, equal_nan=True))
+        else:
+            return bool(np.array_equal(dense1, dense2))
+    except Exception:
+        return False
 
 
 def _compare_dataframes(
@@ -332,9 +418,25 @@ def compare_h5ad(
     result.obs_names_equal = adata1.obs_names.equals(adata2.obs_names)
     result.var_names_equal = adata1.var_names.equals(adata2.var_names)
 
+    # Check if obs/var names are the same set (possibly reordered)
+    obs_set1 = set(adata1.obs_names)
+    obs_set2 = set(adata2.obs_names)
+    var_set1 = set(adata1.var_names)
+    var_set2 = set(adata2.var_names)
+    result.obs_names_same_set = obs_set1 == obs_set2
+    result.var_names_same_set = var_set1 == var_set2
+    result.obs_reordered = result.obs_names_same_set and not result.obs_names_equal
+    result.var_reordered = result.var_names_same_set and not result.var_names_equal
+
     # Compare X matrix (include sum for total read count comparison)
     if adata1.X is not None and adata2.X is not None:
         result.x_diff = _compare_arrays(adata1.X, adata2.X, "X", include_sum=True)
+        
+        # If X differs but obs/var are same sets, check if reordering makes them equal
+        if not result.x_diff.values_equal and (result.obs_reordered or result.var_reordered):
+            result.x_equal_when_reordered = _check_x_equal_when_reordered(
+                adata1, adata2, obs_set1, var_set1
+            )
     elif adata1.X is not None or adata2.X is not None:
         result.x_diff = ComponentDiff(
             name="X",
