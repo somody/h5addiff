@@ -273,13 +273,44 @@ def _compare_dataframes(
         equal = df1.equals(df2)
         diff.values_equal = equal
         if not equal:
-            # Find differing columns
+            # Find differing columns with example differences
             differing_cols = []
-            for col in common_cols:
+            column_details: list[dict[str, Any]] = []
+            for col in sorted(common_cols):
                 if not df1[col].equals(df2[col]):
                     differing_cols.append(col)
+                    # Find rows where values differ
+                    mask = df1[col] != df2[col]
+                    # Also catch NaN mismatches (NaN != NaN is True but
+                    # we want to flag rows where one is NaN and the other isn't)
+                    try:
+                        null1 = df1[col].isna()
+                        null2 = df2[col].isna()
+                        mask = mask | (null1 != null2)
+                    except Exception:
+                        pass
+                    diff_indices = df1.index[mask].tolist()
+                    n_rows_differ = len(diff_indices)
+                    # Collect a few example differences
+                    max_examples = 3
+                    examples = []
+                    for idx in diff_indices[:max_examples]:
+                        examples.append({
+                            "index": str(idx),
+                            "file1": str(df1.loc[idx, col]),
+                            "file2": str(df2.loc[idx, col]),
+                        })
+                    column_details.append({
+                        "column": col,
+                        "n_rows_differ": n_rows_differ,
+                        "examples": examples,
+                    })
             diff.details["differing_columns"] = differing_cols
-            diff.summary = f"{len(differing_cols)} columns have different values"
+            diff.details["column_details"] = column_details
+            col_names = ", ".join(differing_cols)
+            diff.summary = (
+                f"{len(differing_cols)} columns differ: {col_names}"
+            )
     except Exception as e:
         diff.values_equal = False
         diff.summary = f"Comparison failed: {e}"

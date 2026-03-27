@@ -21,6 +21,28 @@ class DiffReport:
             return "❓"
         return "✓" if equal else "✗"
 
+    @staticmethod
+    def _append_column_details_text(
+        comp: ComponentDiff | None, lines: list[str]
+    ) -> None:
+        """Append per-column diff details to the text report."""
+        if comp is None or comp.values_equal:
+            return
+        column_details = comp.details.get("column_details")
+        if not column_details:
+            return
+        for cd in column_details:
+            col = cd["column"]
+            n = cd["n_rows_differ"]
+            lines.append(f"    Column '{col}': {n} rows differ")
+            for ex in cd["examples"]:
+                lines.append(
+                    f"      {ex['index']}: {ex['file1']!s} → {ex['file2']!s}"
+                )
+            remaining = n - len(cd["examples"])
+            if remaining > 0:
+                lines.append(f"      ... and {remaining} more")
+
     def _format_component_row(self, comp: ComponentDiff) -> tuple:
         """Format a component diff as a table row."""
         status = self._status_icon(comp.values_equal)
@@ -116,7 +138,9 @@ class DiffReport:
                 lines.append(f"  {status} {name}: {comp.summary}")
 
         format_section("OBS (Cell Metadata)", self.diff.obs_diff)
+        self._append_column_details_text(self.diff.obs_diff, lines)
         format_section("VAR (Gene Metadata)", self.diff.var_diff)
+        self._append_column_details_text(self.diff.var_diff, lines)
         format_section("LAYERS", self.diff.layers_diff)
         format_section("OBSM (Cell Embeddings)", self.diff.obsm_diff)
         format_section("VARM (Gene Embeddings)", self.diff.varm_diff)
@@ -245,4 +269,49 @@ class DiffReport:
 
         self.console.print()
         self.console.print(components_table)
+
+        # Per-column detail tables for obs and var
+        self._print_column_details_rich(self.diff.obs_diff, "obs")
+        self._print_column_details_rich(self.diff.var_diff, "var")
+
         self.console.print()
+
+    def _print_column_details_rich(
+        self, comp: ComponentDiff | None, label: str
+    ) -> None:
+        """Print a rich table with per-column diff examples."""
+        if comp is None or comp.values_equal:
+            return
+        column_details = comp.details.get("column_details")
+        if not column_details:
+            return
+
+        table = Table(
+            title=f"{label} Column Differences",
+            show_header=True,
+        )
+        table.add_column("Column")
+        table.add_column("Rows differ", justify="right")
+        table.add_column("Example index")
+        table.add_column("File 1")
+        table.add_column("File 2")
+
+        for cd in column_details:
+            col = cd["column"]
+            n = cd["n_rows_differ"]
+            examples = cd["examples"]
+            if examples:
+                # First example gets the column name and count
+                first = examples[0]
+                table.add_row(
+                    col, str(n), first["index"], first["file1"], first["file2"]
+                )
+                for ex in examples[1:]:
+                    table.add_row(
+                        "", "", ex["index"], ex["file1"], ex["file2"]
+                    )
+            else:
+                table.add_row(col, str(n), "", "", "")
+
+        self.console.print()
+        self.console.print(table)
