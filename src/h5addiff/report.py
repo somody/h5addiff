@@ -1,5 +1,7 @@
 """Report generation for h5ad diffs."""
 
+from pathlib import PurePosixPath
+
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -8,12 +10,35 @@ from rich.text import Text
 from .compare import H5adDiff, ComponentDiff
 
 
+def _short_labels(path1: str, path2: str) -> tuple[str, str]:
+    """Compute the shortest unique trailing path segments for two file paths.
+    
+    Returns a pair of short labels that distinguish the two paths.
+    If the filenames alone differ, just use those; otherwise walk up
+    the directory tree until the segments diverge.
+    """
+    parts1 = PurePosixPath(path1).parts
+    parts2 = PurePosixPath(path2).parts
+
+    # Build from the rightmost segment, adding parent directories
+    # until the labels are different from each other
+    for depth in range(1, max(len(parts1), len(parts2)) + 1):
+        suffix1 = "/".join(parts1[-depth:]) if depth <= len(parts1) else path1
+        suffix2 = "/".join(parts2[-depth:]) if depth <= len(parts2) else path2
+        if suffix1 != suffix2:
+            return suffix1, suffix2
+
+    # Fallback (shouldn't happen for genuinely different paths)
+    return path1, path2
+
+
 class DiffReport:
     """Generate human-readable reports from H5adDiff results."""
 
     def __init__(self, diff: H5adDiff):
         self.diff = diff
         self.console = Console()
+        self.label_a, self.label_b = _short_labels(diff.file1, diff.file2)
 
     def _status_icon(self, equal: bool | None) -> str:
         """Return a status icon based on equality."""
@@ -37,7 +62,7 @@ class DiffReport:
             lines.append(f"    Column '{col}': {n} rows differ")
             for ex in cd["examples"]:
                 lines.append(
-                    f"      {ex['index']}: {ex['file1']!s} → {ex['file2']!s}"
+                    f"      {ex['index']}: [A] {ex['file1']!s} → [B] {ex['file2']!s}"
                 )
             remaining = n - len(cd["examples"])
             if remaining > 0:
@@ -48,9 +73,9 @@ class DiffReport:
         status = self._status_icon(comp.values_equal)
 
         if not comp.exists_in_first:
-            existence = "Only in second"
+            existence = "Only in [B]"
         elif not comp.exists_in_second:
-            existence = "Only in first"
+            existence = "Only in [A]"
         else:
             existence = "Both"
 
@@ -73,8 +98,10 @@ class DiffReport:
         lines.append("=" * 60)
         lines.append("H5AD File Comparison Report")
         lines.append("=" * 60)
-        lines.append(f"\nFile 1: {self.diff.file1}")
-        lines.append(f"File 2: {self.diff.file2}")
+        lines.append(f"\n[A] {self.diff.file1}")
+        lines.append(f"[B] {self.diff.file2}")
+        if self.label_a != self.diff.file1:
+            lines.append(f"  (shorthand: [A] = {self.label_a}, [B] = {self.label_b})")
         lines.append("")
 
         # Overall status
@@ -114,8 +141,8 @@ class DiffReport:
             # Show sum comparison (total read counts)
             details = self.diff.x_diff.details
             if "sum_first" in details:
-                lines.append(f"Sum (file 1): {details['sum_first']:,.2f}")
-                lines.append(f"Sum (file 2): {details['sum_second']:,.2f}")
+                lines.append(f"Sum [A]: {details['sum_first']:,.2f}")
+                lines.append(f"Sum [B]: {details['sum_second']:,.2f}")
                 lines.append(f"Sum difference: {details['sum_difference']:+,.2f} ({details['sum_percent_change']:+.2f}%)")
 
         # Helper to format component diffs
@@ -183,8 +210,10 @@ class DiffReport:
 
         self.console.print()
         self.console.print(Panel("[bold]H5AD File Comparison[/bold]"))
-        self.console.print(f"[dim]File 1:[/dim] {self.diff.file1}")
-        self.console.print(f"[dim]File 2:[/dim] {self.diff.file2}")
+        self.console.print(f"[dim]\\[A][/dim] {self.diff.file1}")
+        self.console.print(f"[dim]\\[B][/dim] {self.diff.file2}")
+        if self.label_a != self.diff.file1:
+            self.console.print(f"[dim]  (shorthand: \\[A] = {self.label_a}, \\[B] = {self.label_b})[/dim]")
         self.console.print()
         self.console.print(status_panel)
 
@@ -225,8 +254,8 @@ class DiffReport:
             sum_table.add_column("Property")
             sum_table.add_column("Value", justify="right")
 
-            sum_table.add_row("Sum (file 1)", f"{details['sum_first']:,.2f}")
-            sum_table.add_row("Sum (file 2)", f"{details['sum_second']:,.2f}")
+            sum_table.add_row("Sum [A]", f"{details['sum_first']:,.2f}")
+            sum_table.add_row("Sum [B]", f"{details['sum_second']:,.2f}")
             sum_table.add_row(
                 "Difference",
                 f"{details['sum_difference']:+,.2f} ({details['sum_percent_change']:+.2f}%)",
@@ -293,8 +322,8 @@ class DiffReport:
         table.add_column("Column")
         table.add_column("Rows differ", justify="right")
         table.add_column("Example index")
-        table.add_column("File 1")
-        table.add_column("File 2")
+        table.add_column("[A]")
+        table.add_column("[B]")
 
         for cd in column_details:
             col = cd["column"]
