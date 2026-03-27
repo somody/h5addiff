@@ -280,12 +280,15 @@ def _compare_dataframes(
                 if not df1[col].equals(df2[col]):
                     differing_cols.append(col)
                     # Find rows where values differ
-                    mask = df1[col] != df2[col]
+                    # Cast to object to avoid Categorical comparison errors
+                    s1 = df1[col].astype(object)
+                    s2 = df2[col].astype(object)
+                    mask = s1 != s2
                     # Also catch NaN mismatches (NaN != NaN is True but
                     # we want to flag rows where one is NaN and the other isn't)
                     try:
-                        null1 = df1[col].isna()
-                        null2 = df2[col].isna()
+                        null1 = s1.isna()
+                        null2 = s2.isna()
                         mask = mask | (null1 != null2)
                     except Exception:
                         pass
